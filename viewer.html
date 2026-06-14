@@ -18,47 +18,58 @@
 
 <script>
 
-// ----------------------------
-// MAP INIT（center固定なし）
-// ----------------------------
 const map = new maplibregl.Map({
   container: "map",
   style: "https://tiles.openfreemap.org/styles/liberty",
-  center: [0, 0], // 仮（後でfitBoundsで必ず移動）
+  center: [0, 0],
   zoom: 2
 });
 
-// ----------------------------
-// LOAD GPS
-// ----------------------------
 async function loadGPS() {
 
-  const res = await fetch("./000000001.jsonl");
-  const text = await res.text();
+  // ----------------------------
+  // index.json 読み込み
+  // ----------------------------
+  const indexRes = await fetch("./index.json");
+  const index = await indexRes.json();
 
-  const records = text
-    .trim()
-    .split("\n")
-    .filter(l => l.length > 0)
-    .map(l => JSON.parse(l));
+  console.log("latest:", index.latest);
+  console.log("files:", index.files.length);
 
-  console.log("records:", records.length);
+  let allCoords = [];
 
-  const coords = records
-    .map(r => [Number(r.lo), Number(r.la)])
-    .filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1]));
+  // ----------------------------
+  // 全ファイル読み込み
+  // ----------------------------
+  for (const file of index.files) {
 
-  console.log("coords:", coords.length);
+    const res = await fetch("./" + file);
+    const text = await res.text();
 
-  if (coords.length < 2) {
-    console.log("Not enough points");
+    const records = text
+      .trim()
+      .split("\n")
+      .filter(l => l.length > 0)
+      .map(l => JSON.parse(l));
+
+    const coords = records
+      .map(r => [Number(r.lo), Number(r.la)])
+      .filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1]));
+
+    allCoords = allCoords.concat(coords);
+  }
+
+  console.log("total coords:", allCoords.length);
+
+  if (allCoords.length < 2) {
+    console.log("no data");
     return;
   }
 
   map.on("load", () => {
 
     // ----------------------------
-    // ROUTE SOURCE
+    // route source
     // ----------------------------
     map.addSource("route", {
       type: "geojson",
@@ -66,13 +77,13 @@ async function loadGPS() {
         type: "Feature",
         geometry: {
           type: "LineString",
-          coordinates: coords
+          coordinates: allCoords
         }
       }
     });
 
     // ----------------------------
-    // ROUTE LINE（豪華版）
+    // line layer
     // ----------------------------
     map.addLayer({
       id: "route-line",
@@ -81,13 +92,12 @@ async function loadGPS() {
       paint: {
         "line-color": "#00d4ff",
         "line-width": 5,
-        "line-opacity": 0.9,
-        "line-blur": 0.5
+        "line-opacity": 0.9
       }
     });
 
     // ----------------------------
-    // POINTS
+    // points
     // ----------------------------
     map.addLayer({
       id: "route-points",
@@ -102,11 +112,11 @@ async function loadGPS() {
     });
 
     // ----------------------------
-    // AUTO FIT（中心完全自動）
+    // auto fit
     // ----------------------------
-    const bounds = coords.reduce((b, c) => {
+    const bounds = allCoords.reduce((b, c) => {
       return b.extend(c);
-    }, new maplibregl.LngLatBounds(coords[0], coords[0]));
+    }, new maplibregl.LngLatBounds(allCoords[0], allCoords[0]));
 
     map.fitBounds(bounds, {
       padding: 60,
@@ -114,14 +124,14 @@ async function loadGPS() {
     });
 
     // ----------------------------
-    // START / END MARKER
+    // markers
     // ----------------------------
     new maplibregl.Marker({ color: "green" })
-      .setLngLat(coords[0])
+      .setLngLat(allCoords[0])
       .addTo(map);
 
     new maplibregl.Marker({ color: "red" })
-      .setLngLat(coords[coords.length - 1])
+      .setLngLat(allCoords[allCoords.length - 1])
       .addTo(map);
 
   });
@@ -132,3 +142,4 @@ loadGPS();
 </script>
 </body>
 </html>
+
