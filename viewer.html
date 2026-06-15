@@ -44,6 +44,9 @@ async function loadGPS() {
   for (const file of index.files) {
 
     const res = await fetch("./" + file);
+    if (!res.ok) {
+      continue;
+    }
     const text = await res.text();
 
     const records = text
@@ -53,6 +56,7 @@ async function loadGPS() {
       .map(l => JSON.parse(l));
 
     const coords = records
+      .reverse()
       .map(r => [Number(r.lo), Number(r.la)])
       .filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1]));
 
