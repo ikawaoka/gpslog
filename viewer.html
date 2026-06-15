@@ -66,14 +66,44 @@ async function loadGPS() {
   if (!allCoords || allCoords.length < 2) return;
 
   // ----------------------------
+  // start, goal parameter
+  // ----------------------------
+  const params = new URLSearchParams(location.search);
+  const start = parseInt(params.get("start"), 10);
+  const goal = parseInt(params.get("goal"), 10);
+
+  // ----------------------------
   // safe coords
   // ----------------------------
-  const safeCoords = allCoords.filter(c =>
+  let safeCoords = allCoords.filter(c =>
     Array.isArray(c) &&
     c.length === 2 &&
     Number.isFinite(c[0]) &&
     Number.isFinite(c[1])
   );
+
+  // ----------------------------
+  // newest N start〜goal、0は最新、スタートだけ指定可能。goalをマイナスで指定すると最古のデータから|goal|点数まで取る。
+  // ----------------------------
+  if (Number.isFinite(start) && start > 0) {
+    safeCoords = safeCoords.slice(goal,start);
+
+    console.log("goal:", goal);
+    console.log("start:", start);
+    console.log("filtered coords:", safeCoords.length);
+  } else if (Number.isFinite(goal) && goal > 0) {
+    safeCoords = safeCoords.slice(goal);
+
+    console.log("goal:", goal);
+    console.log("start:", start);
+    console.log("filtered coords:", safeCoords.length);
+  } else if (Number.isFinite(goal) && goal < 0) {
+    safeCoords = safeCoords.slice(goal);
+
+    console.log("goal:", goal);
+    console.log("start:", start);
+    console.log("filtered coords:", safeCoords.length);
+  }
 
   // ----------------------------
   // distance function
