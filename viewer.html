@@ -20,6 +20,9 @@
 
 async function loadGPS() {
 
+  const params = new URLSearchParams(location.search);
+  const targetDate = params.get("date");
+
   // ----------------------------
   // index.json 読み込み
   // ----------------------------
@@ -50,10 +53,28 @@ async function loadGPS() {
 
     const coords = records
       .reverse()
-      .map(r => [Number(r.lo), Number(r.la)])
-      .filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1]));
+      .map(r => {
+        const d = new Date(r.t);
 
-    allCoords = allCoords.concat(coords);
+        const y = d.getFullYear(); //以下ローカルタイムで取れる
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+
+        return {
+          coord: [Number(r.lo), Number(r.la)],
+          date: `${y}${m}${day}`
+        };
+      })
+      .filter(c =>
+        Number.isFinite(c.coord[0]) &&
+        Number.isFinite(c.coord[1])
+      );
+
+    const filteredCoords = targetDate
+      ? coords.filter(c => c.date === targetDate)
+      : coords;
+
+    allCoords = allCoords.concat(filteredCoords.map(c => c.coord));
   }
 
   console.log("total coords:", allCoords.length);
@@ -68,7 +89,6 @@ async function loadGPS() {
   // ----------------------------
   // start, goal parameter
   // ----------------------------
-  const params = new URLSearchParams(location.search);
   const start = parseInt(params.get("start"), 10);
   const goal = parseInt(params.get("goal"), 10);
 
