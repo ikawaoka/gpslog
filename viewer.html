@@ -315,12 +315,19 @@ const map = new maplibregl.Map({
   bounds: bounds,
 });
 
-  map.fitBounds(bounds, {
-    padding: 60,
-    duration: 0
-  });
+map.fitBounds(bounds, {
+  padding: 60,
+  duration: 0
+});
 
 map.on("load", () => {
+
+  const layers = map.getStyle().layers;
+  for (const layer of layers) {
+    if (layer.type === "fill-extrusion") {
+      map.removeLayer(layer.id);
+    }
+  }
 
   // ----------------------------
   // route source
