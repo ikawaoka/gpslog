@@ -23,6 +23,7 @@ async function loadGPS() {
   const params = new URLSearchParams(location.search);
   const targetDate = params.get("date");
   const pass = params.get("pass");
+  console.log("pass length:", pass?.length);
 
   // ----------------------------
   // index.json 読み込み
@@ -46,27 +47,46 @@ async function loadGPS() {
     }
     const text = await res.text();
 
-function decodeLine(line, pass) {
-  const raw = Uint8Array.from(atob(line), c => c.charCodeAt(0));
+function base64UrlToBytes(base64url) {
+  const base64 = base64url
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(base64url.length + (4 - base64url.length % 4) % 4, "=");
 
-  const nonce = raw.slice(0, 12);
-  const data = raw.slice(12);
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+}
 
-  const keyBytes = Uint8Array.from(atob(pass), c => c.charCodeAt(0));
+async function decodeLine(line, pass) {
 
-  return crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    "AES-GCM",
-    false,
-    ["decrypt"]
-  ).then(key => {
-    return crypto.subtle.decrypt(
+  try {
+    const raw = Uint8Array.from(atob(line), c => c.charCodeAt(0));
+
+    const nonce = raw.slice(0, 12);
+    const data = raw.slice(12);
+
+    const keyBytes = base64UrlToBytes(pass);
+
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      "AES-GCM",
+      false,
+      ["decrypt"]
+    );
+
+    const buf = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: nonce },
       key,
       data
     );
-  }).then(buf => new TextDecoder().decode(buf));
+
+    return new TextDecoder().decode(buf);
+
+  } catch (e) {
+    console.error("LINE DECRYPT FAIL:", line);
+    console.error(e);
+    return null;
+  }
 }
 
 function looksEncrypted(str) {
@@ -76,37 +96,125 @@ function looksEncrypted(str) {
 
 function isEncrypted(text) {
   const first = text.trim().split("\n")[0];
-
+console.log("ssss1:", first);
   if (looksEncrypted(first)) {
+console.log("ssss2");
     return true; // {で始まらないなら絶対暗号化されている
   }
 
+console.log("ssss3");
   try {
+console.log("ssss4");
     JSON.parse(first);
+    console.log("ssss5");
+
     return false; // JSONLとして読める = 平文
   } catch {
+console.log("ssss6");
     return true; // パース失敗 = 暗号化
   }
 }
 
-let records;
+function isJson(line) {
+  try {
+    JSON.parse(line);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-if (pass && isEncrypted(text)) {
 
-  if (!pass) {
-    throw new Error("encrypted data but no pass");
+function isBase64Like(line) {
+  // JSONなら除外
+  if (line.trim().startsWith("{")) return false;
+
+  // base64urlっぽいか雑にチェック
+  return /^[A-Za-z0-9_-]+$/.test(line);
+}
+
+function isJsonLine(line) {
+  const s = line.trim();
+  return s.startsWith("{") || s.startsWith("[");
+}
+
+function base64UrlToBase64(s) {
+  return s
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(s.length + (4 - s.length % 4) % 4, "=");
+}
+
+function safeAtob(line) {
+  try {
+    return atob(base64UrlToBase64(line));
+  } catch (e) {
+    console.error("NOT BASE64:", line);
+    return null;
+  }
+}
+
+async function decodeLineIfNeeded(line, pass) {
+
+  const s = line.trim();
+  if (!s) return null;
+
+  // JSONはそのまま
+  if (isJsonLine(s)) {
+    try {
+      return JSON.parse(s);
+    } catch (e) {
+      console.error("JSON parse fail:", s);
+      return null;
+    }
   }
 
-  const lines = text
-    .trim()
-    .split("\n")
-    .filter(l => l.length > 0);
+  // base64 decode
+  const bin = safeAtob(s);
+  if (!bin) return null;
 
-  const decodedLines = await Promise.all(
-    lines.map(line => decodeLine(line, pass))
+  const raw = Uint8Array.from(bin, c => c.charCodeAt(0));
+
+  if (raw.length < 13) {
+    console.error("too short:", s);
+    return null;
+  }
+
+  const nonce = raw.slice(0, 12);
+  const data = raw.slice(12);
+
+  const keyBytes = base64UrlToBytes(pass);
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    "AES-GCM",
+    false,
+    ["decrypt"]
   );
 
-  records = decodedLines.map(l => JSON.parse(l));
+  const buf = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: nonce },
+    key,
+    data
+  );
+
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+let records = [];
+
+if (pass) {
+
+  records = (await Promise.all(
+    text.trim()
+      .split("\n")
+      .filter(Boolean)
+      .map(line => decodeLineIfNeeded(line, pass))
+  )).filter(Boolean);
+//console.log("ssss7:",records);
+console.log("ssss7 raw:", records[0]);
+console.log("keys:", Object.keys(records[0]));
 
 } else {
 
@@ -115,9 +223,13 @@ if (pass && isEncrypted(text)) {
     .split("\n")
     .filter(l => l.length > 0)
     .map(l => JSON.parse(l));
+//console.log("ssss8:",records);
+console.log("ssss8 raw:", records[0]);
+console.log("keys:", Object.keys(records[0]));
 }
 
-    const coords = records
+const coords = records
+
       .reverse()
       .map(r => {
         const d = new Date(r.t);
@@ -135,6 +247,7 @@ if (pass && isEncrypted(text)) {
         Number.isFinite(c.coord[0]) &&
         Number.isFinite(c.coord[1])
       );
+console.log("ssss9:",coords);
 
     const filteredCoords = targetDate
       ? coords.filter(c => c.date === targetDate)
