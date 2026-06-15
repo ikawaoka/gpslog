@@ -22,6 +22,7 @@ async function loadGPS() {
 
   const params = new URLSearchParams(location.search);
   const targetDate = params.get("date");
+  const pass = params.get("pass");
 
   // ----------------------------
   // index.json 読み込み
@@ -45,11 +46,76 @@ async function loadGPS() {
     }
     const text = await res.text();
 
-    const records = text
-      .trim()
-      .split("\n")
-      .filter(l => l.length > 0)
-      .map(l => JSON.parse(l));
+function decodeLine(line, pass) {
+  const raw = Uint8Array.from(atob(line), c => c.charCodeAt(0));
+
+  const nonce = raw.slice(0, 12);
+  const data = raw.slice(12);
+
+  const keyBytes = Uint8Array.from(atob(pass), c => c.charCodeAt(0));
+
+  return crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    "AES-GCM",
+    false,
+    ["decrypt"]
+  ).then(key => {
+    return crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: nonce },
+      key,
+      data
+    );
+  }).then(buf => new TextDecoder().decode(buf));
+}
+
+function looksEncrypted(str) {
+  // JSONLなら普通は { で始まる
+  return !(str.trim().startsWith("{")); //{で始まらないならtrue
+}
+
+function isEncrypted(text) {
+  const first = text.trim().split("\n")[0];
+
+  if (looksEncrypted(first)) {
+    return true; // {で始まらないなら絶対暗号化されている
+  }
+
+  try {
+    JSON.parse(first);
+    return false; // JSONLとして読める = 平文
+  } catch {
+    return true; // パース失敗 = 暗号化
+  }
+}
+
+let records;
+
+if (pass && isEncrypted(text)) {
+
+  if (!pass) {
+    throw new Error("encrypted data but no pass");
+  }
+
+  const lines = text
+    .trim()
+    .split("\n")
+    .filter(l => l.length > 0);
+
+  const decodedLines = await Promise.all(
+    lines.map(line => decodeLine(line, pass))
+  );
+
+  records = decodedLines.map(l => JSON.parse(l));
+
+} else {
+
+  records = text
+    .trim()
+    .split("\n")
+    .filter(l => l.length > 0)
+    .map(l => JSON.parse(l));
+}
 
     const coords = records
       .reverse()
