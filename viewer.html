@@ -180,21 +180,24 @@ const map = new maplibregl.Map({
 map.on("load", () => {
 
   // ----------------------------
-  // route source（MultiLineString）
+  // route source
   // ----------------------------
   map.addSource("route", {
     type: "geojson",
     data: {
-      type: "Feature",
-      geometry: {
-        type: "MultiLineString",
-        coordinates: segments
-      }
+      type: "FeatureCollection",
+      features: segments.map(seg => ({
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: seg
+        }
+      }))
     }
   });
 
   // ----------------------------
-  // line
+  // route line
   // ----------------------------
   map.addLayer({
     id: "route-line",
@@ -202,45 +205,45 @@ map.on("load", () => {
     source: "route",
     paint: {
       "line-color": "#00d4ff",
-      "line-width": 4
+      "line-width": 4,
+      "line-opacity": 0.9,
+      "line-blur": 0.5
     }
   });
 
   // ----------------------------
-  // points（セグメント単位でフィルタ）
+  // route points
   // ----------------------------
-  const flatPoints = segments.flat().filter((p, i, arr) => {
-    if (i === 0 || i === arr.length - 1) return true;
-
-    const prev = arr[i - 1];
-    const next = arr[i + 1];
-
-    const d1 = haversine(prev, p);
-    const d2 = haversine(p, next);
-
-    return !(d1 > 100 && d2 > 100);
-  });
-
-  map.addSource("points", {
-    type: "geojson",
-    data: {
-      type: "Feature",
-      geometry: {
-        type: "MultiPoint",
-        coordinates: flatPoints
-      }
-    }
-  });
-
   map.addLayer({
     id: "route-points",
     type: "circle",
-    source: "points",
+    source: "route",
     paint: {
       "circle-radius": 3,
-      "circle-color": "#ff3b30"
+      "circle-color": "#ff3b30",
+      "circle-stroke-width": 1,
+      "circle-stroke-color": "#ffffff"
     }
   });
+
+  // ----------------------------
+  // start marker
+  // ----------------------------
+  const firstCoord = segments[0][0];
+
+  new maplibregl.Marker({ color: "green" })
+    .setLngLat(firstCoord)
+    .addTo(map);
+
+  // ----------------------------
+  // end marker
+  // ----------------------------
+  const lastSeg = segments[segments.length - 1];
+  const lastCoord = lastSeg[lastSeg.length - 1];
+
+  new maplibregl.Marker({ color: "red" })
+    .setLngLat(lastCoord)
+    .addTo(map);
 
 });
 }
