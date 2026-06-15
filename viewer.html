@@ -208,6 +208,15 @@ map.on("load", () => {
     }
   });
 
+  const bounds = new maplibregl.LngLatBounds();
+  segments.forEach(seg => {
+    seg.forEach(c => bounds.extend(c));
+  });
+
+  map.fitBounds(bounds, {
+    padding: 60,
+    duration: 0
+  });
 });
 }
 
