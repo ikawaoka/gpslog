@@ -18,34 +18,6 @@
 
 <script>
 
-async function loadGPS() {
-
-  const params = new URLSearchParams(location.search);
-  const targetDate = params.get("date");
-  const pass = params.get("pass");
-  console.log("pass length:", pass?.length);
-
-  // ----------------------------
-  // index.json 読み込み
-  // ----------------------------
-  const indexRes = await fetch("./index.json");
-  const index = await indexRes.json();
-
-  console.log("latest:", index.latest);
-  console.log("files:", index.files.length);
-
-  let allCoords = [];
-
-  // ----------------------------
-  // 全ファイル読み込み
-  // ----------------------------
-  for (const file of index.files) {
-
-    const res = await fetch("./" + file);
-    if (!res.ok) {
-      continue;
-    }
-    const text = await res.text();
 
 function base64UrlToBytes(base64url) {
   const base64 = base64url
@@ -54,83 +26,6 @@ function base64UrlToBytes(base64url) {
     .padEnd(base64url.length + (4 - base64url.length % 4) % 4, "=");
 
   return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-}
-
-async function decodeLine(line, pass) {
-
-  try {
-    const raw = Uint8Array.from(atob(line), c => c.charCodeAt(0));
-
-    const nonce = raw.slice(0, 12);
-    const data = raw.slice(12);
-
-    const keyBytes = base64UrlToBytes(pass);
-
-    const key = await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      "AES-GCM",
-      false,
-      ["decrypt"]
-    );
-
-    const buf = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: nonce },
-      key,
-      data
-    );
-
-    return new TextDecoder().decode(buf);
-
-  } catch (e) {
-    console.error("LINE DECRYPT FAIL:", line);
-    console.error(e);
-    return null;
-  }
-}
-
-function looksEncrypted(str) {
-  // JSONLなら普通は { で始まる
-  return !(str.trim().startsWith("{")); //{で始まらないならtrue
-}
-
-function isEncrypted(text) {
-  const first = text.trim().split("\n")[0];
-console.log("ssss1:", first);
-  if (looksEncrypted(first)) {
-console.log("ssss2");
-    return true; // {で始まらないなら絶対暗号化されている
-  }
-
-console.log("ssss3");
-  try {
-console.log("ssss4");
-    JSON.parse(first);
-    console.log("ssss5");
-
-    return false; // JSONLとして読める = 平文
-  } catch {
-console.log("ssss6");
-    return true; // パース失敗 = 暗号化
-  }
-}
-
-function isJson(line) {
-  try {
-    JSON.parse(line);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-
-function isBase64Like(line) {
-  // JSONなら除外
-  if (line.trim().startsWith("{")) return false;
-
-  // base64urlっぽいか雑にチェック
-  return /^[A-Za-z0-9_-]+$/.test(line);
 }
 
 function isJsonLine(line) {
@@ -202,34 +97,56 @@ async function decodeLineIfNeeded(line, pass) {
   return JSON.parse(new TextDecoder().decode(buf));
 }
 
-let records = [];
+async function loadGPS() {
 
-if (pass) {
+  const params = new URLSearchParams(location.search);
+  const targetDate = params.get("date");
+  const pass = params.get("pass");
+  console.log("pass length:", pass?.length);
 
-  records = (await Promise.all(
-    text.trim()
-      .split("\n")
-      .filter(Boolean)
-      .map(line => decodeLineIfNeeded(line, pass))
-  )).filter(Boolean);
-//console.log("ssss7:",records);
-console.log("ssss7 raw:", records[0]);
-console.log("keys:", Object.keys(records[0]));
+  // ----------------------------
+  // index.json 読み込み
+  // ----------------------------
+  const indexRes = await fetch("./index.json");
+  const index = await indexRes.json();
 
-} else {
+  console.log("latest:", index.latest);
+  console.log("files:", index.files.length);
 
-  records = text
-    .trim()
-    .split("\n")
-    .filter(l => l.length > 0)
-    .map(l => JSON.parse(l));
-//console.log("ssss8:",records);
-console.log("ssss8 raw:", records[0]);
-console.log("keys:", Object.keys(records[0]));
-}
+  let allCoords = [];
 
-const coords = records
+  // ----------------------------
+  // 全ファイル読み込み
+  // ----------------------------
+  for (const file of index.files) {
 
+    const res = await fetch("./" + file);
+    if (!res.ok) {
+      continue;
+    }
+    const text = await res.text();
+
+    let records = [];
+
+    if (pass) {
+
+      records = (await Promise.all(
+        text.trim()
+          .split("\n")
+          .filter(Boolean)
+          .map(line => decodeLineIfNeeded(line, pass))
+      )).filter(Boolean);
+
+    } else {
+
+      records = text
+        .trim()
+        .split("\n")
+        .filter(l => l.length > 0)
+        .map(l => JSON.parse(l));
+    }
+
+    const coords = records
       .reverse()
       .map(r => {
         const d = new Date(r.t);
@@ -247,7 +164,6 @@ const coords = records
         Number.isFinite(c.coord[0]) &&
         Number.isFinite(c.coord[1])
       );
-console.log("ssss9:",coords);
 
     const filteredCoords = targetDate
       ? coords.filter(c => c.date === targetDate)
@@ -255,8 +171,6 @@ console.log("ssss9:",coords);
 
     allCoords = allCoords.concat(filteredCoords.map(c => c.coord));
   }
-
-  console.log("total coords:", allCoords.length);
 
   if (allCoords.length < 2) {
     console.log("no data");
