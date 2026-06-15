@@ -70,75 +70,145 @@ async function loadGPS() {
     return;
   }
 
-  map.on("load", () => {
+map.on("load", () => {
 
-    // ----------------------------
-    // route source
-    // ----------------------------
-    map.addSource("route", {
-      type: "geojson",
-      data: {
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: allCoords
+  if (!allCoords || allCoords.length < 2) return;
+
+  // ----------------------------
+  // safe coords
+  // ----------------------------
+  const safeCoords = allCoords.filter(c =>
+    Array.isArray(c) &&
+    c.length === 2 &&
+    Number.isFinite(c[0]) &&
+    Number.isFinite(c[1])
+  );
+
+  // ----------------------------
+  // distance function
+  // ----------------------------
+  function haversine(a, b) {
+    const R = 6371000;
+    const toRad = x => x * Math.PI / 180;
+
+    const dLat = toRad(b[1] - a[1]);
+    const dLon = toRad(b[0] - a[0]);
+
+    const lat1 = toRad(a[1]);
+    const lat2 = toRad(b[1]);
+
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) *
+      Math.sin(dLon / 2) ** 2;
+
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  // ----------------------------
+  // segment split
+  // ----------------------------
+  function splitSegments(coords, threshold = 100) {
+    const segments = [];
+    let current = [];
+
+    for (let i = 0; i < coords.length; i++) {
+
+      const p = coords[i];
+
+      if (current.length === 0) {
+        current.push(p);
+        continue;
+      }
+
+      const prev = current[current.length - 1];
+      const dist = haversine(prev, p);
+
+      if (dist > threshold) {
+        if (current.length >= 2) {
+          segments.push(current);
         }
+        current = [p];
+      } else {
+        current.push(p);
       }
-    });
+    }
 
-    // ----------------------------
-    // line layer
-    // ----------------------------
-    map.addLayer({
-      id: "route-line",
-      type: "line",
-      source: "route",
-      paint: {
-        "line-color": "#00d4ff",
-        "line-width": 5,
-        "line-opacity": 0.9
+    if (current.length >= 2) {
+      segments.push(current);
+    }
+
+    return segments;
+  }
+
+  const segments = splitSegments(safeCoords, 100);
+
+  console.log("segments:", segments.length);
+
+  // ----------------------------
+  // route source（MultiLineString）
+  // ----------------------------
+  map.addSource("route", {
+    type: "geojson",
+    data: {
+      type: "Feature",
+      geometry: {
+        type: "MultiLineString",
+        coordinates: segments
       }
-    });
-
-    // ----------------------------
-    // points
-    // ----------------------------
-    map.addLayer({
-      id: "route-points",
-      type: "circle",
-      source: "route",
-      paint: {
-        "circle-radius": 3,
-        "circle-color": "#ff3b30",
-        "circle-stroke-width": 1,
-        "circle-stroke-color": "#ffffff"
-      }
-    });
-
-    // ----------------------------
-    // auto fit
-    // ----------------------------
-    const bounds = allCoords.reduce((b, c) => {
-      return b.extend(c);
-    }, new maplibregl.LngLatBounds(allCoords[0], allCoords[0]));
-
-    map.fitBounds(bounds, {
-      padding: 60,
-      duration: 0
-    });
-
-    // ----------------------------
-    // markers
-    // ----------------------------
-    new maplibregl.Marker({ color: "green" })
-      .setLngLat(allCoords[0])
-      .addTo(map);
-
-    new maplibregl.Marker({ color: "red" })
-      .setLngLat(allCoords[allCoords.length - 1])
-      .addTo(map);
-
+    }
   });
+
+  // ----------------------------
+  // line
+  // ----------------------------
+  map.addLayer({
+    id: "route-line",
+    type: "line",
+    source: "route",
+    paint: {
+      "line-color": "#00d4ff",
+      "line-width": 4
+    }
+  });
+
+  // ----------------------------
+  // points（セグメント単位でフィルタ）
+  // ----------------------------
+  const flatPoints = segments.flat().filter((p, i, arr) => {
+    if (i === 0 || i === arr.length - 1) return true;
+
+    const prev = arr[i - 1];
+    const next = arr[i + 1];
+
+    const d1 = haversine(prev, p);
+    const d2 = haversine(p, next);
+
+    return !(d1 > 100 && d2 > 100);
+  });
+
+  map.addSource("points", {
+    type: "geojson",
+    data: {
+      type: "Feature",
+      geometry: {
+        type: "MultiPoint",
+        coordinates: flatPoints
+      }
+    }
+  });
+
+  map.addLayer({
+    id: "route-points",
+    type: "circle",
+    source: "points",
+    paint: {
+      "circle-radius": 3,
+      "circle-color": "#ff3b30"
+    }
+  });
+
+});
 }
 
 loadGPS();
