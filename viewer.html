@@ -141,7 +141,30 @@ map.on("load", () => {
     return segments;
   }
 
-  const segments = splitSegments(safeCoords, 100).filter(seg => seg.length >= 6);
+  function segmentSizeOk(seg, minMeters = 1) { //同一点が集中していたらFalse
+
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLon = Infinity, maxLon = -Infinity;
+
+    for (const [lon, lat] of seg) {
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    }
+
+    // 中心緯度でメートル換算
+    const avgLat = (minLat + maxLat) / 2;
+    const latMeter = 111320;
+    const lonMeter = 111320 * Math.cos(avgLat * Math.PI / 180);
+
+    const width = (maxLon - minLon) * lonMeter;
+    const height = (maxLat - minLat) * latMeter;
+
+    return Math.max(width, height) >= minMeters;
+  }
+
+  const segments = splitSegments(safeCoords, 100).filter(seg => seg.length >= 100 || segmentSizeOk(seg,1));
 
   console.log("segments:", segments.length);
 
