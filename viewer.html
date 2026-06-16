@@ -1,6 +1,9 @@
 <!doctype html>
 <html>
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta charset="utf-8" />
   <title>GPS Viewer</title>
 
@@ -119,11 +122,11 @@ async function loadGPS() {
   // ----------------------------
   // index.json 読み込み
   // ----------------------------
-  const indexRes = await fetch("./"+dgl+"/index.json");
+  const indexRes = await fetch("./"+dgl+"/index.json?t=" + Date.now());
   const index = await indexRes.json();
 
-  console.log("latest:", index.latest);
-  console.log("files:", index.files.length);
+  // console.log("latest:", index.latest);
+  // console.log("files:", index.files.length);
 
   let allCoords = [];
 
@@ -132,7 +135,7 @@ async function loadGPS() {
   // ----------------------------
   for (const file of index.files) {
 
-    const res = await fetch("./" + dgl + "/" + file);
+    const res = await fetch("./" + dgl + "/" + file + "?t=" + Date.now());
     if (!res.ok) {
       continue;
     }
