@@ -104,6 +104,9 @@ async function loadGPS() {
 
   const params = new URLSearchParams(location.search);
   let targetDate = params.get("date");
+  if (targetDate === "latest") {
+    //最後の日時を使う
+  }
   if (targetDate === "today") {
     const now = new Date();
     targetDate =
@@ -112,12 +115,12 @@ async function loadGPS() {
       String(now.getDate()).padStart(2, "0");
   }
   const pass = params.get("pass");
-  const dgl = params.get("dgl");
+  let dgl = params.get("dgl");
   if(!dgl){
     dgl = "0000"
   }
 
-  console.log("pass length:", pass?.length);
+  //console.log("pass length:", pass?.length);
 
   // ----------------------------
   // index.json 読み込み
@@ -134,8 +137,12 @@ async function loadGPS() {
   // 全ファイル読み込み
   // ----------------------------
   for (const file of index.files) {
+    let jsonl = "./" + dgl + "/" + file;
+    if(file == index.files[0]){
+      jsonl += "?t=" + Date.now() //最新だけキャッシュを拒否する
+    }
 
-    const res = await fetch("./" + dgl + "/" + file + "?t=" + Date.now());
+    const res = await fetch(jsonl);
     if (!res.ok) {
       continue;
     }
@@ -180,6 +187,11 @@ async function loadGPS() {
         Number.isFinite(c.coord[0]) &&
         Number.isFinite(c.coord[1])
       );
+
+    if(targetDate == "latest"){
+      targetDate = coords[0].date;
+    }
+    //console.log("targetDate:", targetDate);
 
     const filteredCoords = targetDate
       ? coords.filter(c => c.date === targetDate)
